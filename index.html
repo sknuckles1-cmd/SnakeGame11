@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Snake Game</title>
+    <title>Auto-Playing Snake Game</title>
     <style>
         body {
             display: flex;
@@ -48,7 +48,7 @@
 </head>
 <body>
 
-    <h1>Simple Snake Game</h1>
+    <h1>Auto-Playing Snake Game</h1>
     <div id="scoreBoard">Score: 0</div>
     <canvas id="gameCanvas" width="400" height="400"></canvas>
     <div id="gameOverMessage">
@@ -68,35 +68,162 @@
         const tileCount = canvasSize / grid; // Number of tiles horizontally/vertically
 
         // Game state variables
-        let snake = [
-            { x: 10, y: 10 } // Initial position (in grid units) - centered
-        ];
-        let food = { x: 15, y: 15 }; // Initial food position (in grid units)
-        let dx = 0; // Horizontal velocity (grid units per frame)
-        let dy = 0; // Vertical velocity (grid units per frame)
+        let snake = []; // Initialized in startGame
+        let food = {};  // Initialized in startGame
+        let dx = 0;     // Horizontal velocity (grid units per frame)
+        let dy = 0;     // Vertical velocity (grid units per frame)
         let score = 0;
-        let changingDirection = false; // Prevent rapid direction changes
         let gameRunning = false;
         let gameInterval;
+
+        // --- AI Helper Function: Check for Collision ---
+        function isCollision(x, y, snakeArray) {
+            // Check wall collision
+            if (x < 0 || x >= tileCount || y < 0 || y >= tileCount) {
+                return true;
+            }
+            // Check self collision
+            for (let i = 0; i < snakeArray.length; i++) {
+                if (x === snakeArray[i].x && y === snakeArray[i].y) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // --- AI Decision Making Function ---
+        function decideNextMove() {
+            const head = snake[0];
+            const currentDx = dx; // Store current direction to avoid reversal
+            const currentDy = dy;
+
+            // 1. Calculate differences to food
+            const diffX = food.x - head.x;
+            const diffY = food.y - head.y;
+
+            // 2. Define potential moves (preferred and alternative)
+            let preferredMoves = [];
+            let alternativeMoves = [];
+
+            // Determine preferred axis based on larger distance
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                // Prefer horizontal
+                if (diffX > 0) preferredMoves.push({ dx: 1, dy: 0 }); // Right
+                else if (diffX < 0) preferredMoves.push({ dx: -1, dy: 0 }); // Left
+
+                // Alternative is vertical
+                if (diffY > 0) alternativeMoves.push({ dx: 0, dy: 1 }); // Down
+                else if (diffY < 0) alternativeMoves.push({ dx: 0, dy: -1 }); // Up
+                else { // If dy is 0, add both vertical as alternatives
+                     alternativeMoves.push({ dx: 0, dy: -1 }); // Up
+                     alternativeMoves.push({ dx: 0, dy: 1 });  // Down
+                }
+
+            } else {
+                 // Prefer vertical
+                if (diffY > 0) preferredMoves.push({ dx: 0, dy: 1 }); // Down
+                else if (diffY < 0) preferredMoves.push({ dx: 0, dy: -1 }); // Up
+
+                // Alternative is horizontal
+                if (diffX > 0) alternativeMoves.push({ dx: 1, dy: 0 }); // Right
+                else if (diffX < 0) alternativeMoves.push({ dx: -1, dy: 0 }); // Left
+                 else { // If dx is 0, add both horizontal as alternatives
+                     alternativeMoves.push({ dx: -1, dy: 0 }); // Left
+                     alternativeMoves.push({ dx: 1, dy: 0 });  // Right
+                 }
+            }
+             // Handle case where head is exactly on food (should be rare, but good to handle)
+            if (diffX === 0 && diffY === 0) {
+                 // Keep current direction if possible and safe
+                 preferredMoves.push({dx: currentDx, dy: currentDy});
+            }
+
+
+            // 3. Test preferred moves first
+            for (const move of preferredMoves) {
+                const nextX = head.x + move.dx;
+                const nextY = head.y + move.dy;
+                // Avoid immediate reversal if snake is longer than 1 segment
+                const isReversing = snake.length > 1 && move.dx === -currentDx && move.dy === -currentDy;
+
+                if (!isCollision(nextX, nextY, snake) && !isReversing) {
+                    dx = move.dx;
+                    dy = move.dy;
+                    return; // Found a safe preferred move
+                }
+            }
+
+             // 4. Test alternative moves if no preferred move worked
+            for (const move of alternativeMoves) {
+                const nextX = head.x + move.dx;
+                const nextY = head.y + move.dy;
+                const isReversing = snake.length > 1 && move.dx === -currentDx && move.dy === -currentDy;
+
+                if (!isCollision(nextX, nextY, snake) && !isReversing) {
+                    dx = move.dx;
+                    dy = move.dy;
+                    return; // Found a safe alternative move
+                }
+            }
+
+            // 5. Fallback: If all direct routes to food are blocked, try *any* safe move
+            // Try continuing straight first if safe (if not reversing)
+            const straightX = head.x + currentDx;
+            const straightY = head.y + currentDy;
+            if( !(currentDx === 0 && currentDy === 0) && !isCollision(straightX, straightY, snake)){
+                 dx = currentDx;
+                 dy = currentDy;
+                 // console.log("Fallback: Continuing straight"); // Debugging
+                 return;
+            }
+
+            // If straight is blocked, check all four directions
+             const possibleMoves = [
+                 { dx: 0, dy: -1 }, // Up
+                 { dx: 1, dy: 0 },  // Right
+                 { dx: 0, dy: 1 },  // Down
+                 { dx: -1, dy: 0 } // Left
+             ];
+
+             for (const move of possibleMoves) {
+                 const nextX = head.x + move.dx;
+                 const nextY = head.y + move.dy;
+                 // Prevent immediate reversal only if snake is longer than 1
+                 const isReversing = snake.length > 1 && move.dx === -currentDx && move.dy === -currentDy;
+
+                 if (!isCollision(nextX, nextY, snake) && !isReversing) {
+                    // console.log("Fallback: Trying general safe move", move); // Debugging
+                     dx = move.dx;
+                     dy = move.dy;
+                     return; // Found *any* safe move
+                 }
+             }
+
+             // If we reach here, there are NO safe moves. The game will end on the next step.
+             // We can just let the current dx/dy persist, which will cause a collision.
+             // console.log("No safe moves found!"); // Debugging
+        }
+
 
         // --- Game Functions ---
 
         function main() {
             if (!gameRunning) return; // Stop the loop if game over
 
-            // Delay loop slightly based on score (optional speed increase)
-            // Higher score = slightly faster game
-            const speed = 150 - Math.min(score * 2, 100); // Caps speed increase
+            const speed = 100 - Math.min(score * 1.5, 80); // Slightly faster auto-play speed baseline
             gameInterval = setTimeout(() => {
-                changingDirection = false; // Allow direction change again
+
+                // *** AI makes decision HERE ***
+                decideNextMove();
+
                 clearCanvas();
-                moveSnake();
+                moveSnake(); // Move based on dx/dy set by AI
                 drawFood();
                 drawSnake();
-                // Check for game over *after* moving/drawing
+
                 if (isGameOver()) {
                     endGame();
-                    return; // Stop this execution path
+                    return;
                 }
                 main(); // Call the next game loop
             }, speed);
@@ -104,23 +231,23 @@
 
         function startGame() {
             // Reset state
-            snake = [{ x: 10, y: 10 }];
+            snake = [{ x: 10, y: 10 }]; // Start in the middle
             generateFood(); // Place initial food randomly
-            dx = 0;
-            dy = 0;
             score = 0;
             scoreBoard.textContent = `Score: ${score}`;
             gameOverMessage.style.display = 'none';
             gameRunning = true;
-            changingDirection = false;
-             // Start the first direction (e.g., right) only after a key press
-             // We wait for the first key press to set initial dx/dy
+
+            // *** Set Initial Direction for Auto-Play ***
+            dx = 1; // Start moving right
+            dy = 0;
 
             // Clear any existing interval if restarting
             if (gameInterval) {
                 clearTimeout(gameInterval);
             }
-            // Start the game loop
+
+            // *** Start the game loop immediately ***
             main();
         }
 
@@ -131,18 +258,14 @@
         }
 
         function clearCanvas() {
-            ctx.fillStyle = '#fff'; // White background
+            ctx.fillStyle = '#fff';
             ctx.fillRect(0, 0, canvasSize, canvasSize);
-            // Optionally redraw the border if clearing affects it (fillRect shouldn't)
-            // ctx.strokeStyle = '#333';
-            // ctx.lineWidth = 5;
-            // ctx.strokeRect(0, 0, canvasSize, canvasSize);
         }
 
         function drawSnakePart(part) {
-            ctx.fillStyle = 'green';
-            ctx.strokeStyle = 'darkgreen'; // Border for segments
-             ctx.lineWidth = 1;
+            ctx.fillStyle = 'blue'; // Changed color for AI snake
+            ctx.strokeStyle = 'darkblue';
+            ctx.lineWidth = 1;
             ctx.fillRect(part.x * grid, part.y * grid, grid, grid);
             ctx.strokeRect(part.x * grid, part.y * grid, grid, grid);
         }
@@ -152,12 +275,9 @@
         }
 
         function moveSnake() {
-            // Don't move if no direction is set yet
-            if (dx === 0 && dy === 0) return;
-
-            // Calculate new head position
+            // Calculate new head position based on dx, dy (set by AI)
             const head = { x: snake[0].x + dx, y: snake[0].y + dy };
-            snake.unshift(head); // Add new head to the beginning
+            snake.unshift(head); // Add new head
 
             // Check if snake ate food
             if (head.x === food.x && head.y === food.y) {
@@ -165,14 +285,14 @@
                 scoreBoard.textContent = `Score: ${score}`;
                 generateFood(); // Generate new food
             } else {
-                snake.pop(); // Remove tail segment if no food was eaten
+                snake.pop(); // Remove tail segment
             }
         }
 
         function drawFood() {
             ctx.fillStyle = 'red';
             ctx.strokeStyle = 'darkred';
-             ctx.lineWidth = 1;
+            ctx.lineWidth = 1;
             ctx.fillRect(food.x * grid, food.y * grid, grid, grid);
             ctx.strokeRect(food.x * grid, food.y * grid, grid, grid);
         }
@@ -184,7 +304,7 @@
                     x: Math.floor(Math.random() * tileCount),
                     y: Math.floor(Math.random() * tileCount)
                 };
-            } while (isFoodOnSnake(newFoodPosition)); // Keep trying until food is not on the snake
+            } while (isFoodOnSnake(newFoodPosition));
             food = newFoodPosition;
         }
 
@@ -192,72 +312,28 @@
             return snake.some(part => part.x === position.x && part.y === position.y);
         }
 
-        function changeDirection(event) {
-            // If game hasn't started, the first arrow key press starts it and sets direction
-            if (!gameRunning && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
-                 startGame(); // Start the game on first valid keypress
-            } else if (!gameRunning) {
-                return; // Ignore other keys if game isn't running
-            }
-
-            if (changingDirection) return; // Prevent changing direction twice before next move
-            changingDirection = true;
-
-            const keyPressed = event.key;
-            const goingUp = dy === -1;
-            const goingDown = dy === 1;
-            const goingLeft = dx === -1;
-            const goingRight = dx === 1;
-
-            // Change direction based on key press, preventing 180-degree turns
-            if (keyPressed === 'ArrowLeft' && !goingRight) {
-                dx = -1;
-                dy = 0;
-            } else if (keyPressed === 'ArrowUp' && !goingDown) {
-                dx = 0;
-                dy = -1;
-            } else if (keyPressed === 'ArrowRight' && !goingLeft) {
-                dx = 1;
-                dy = 0;
-            } else if (keyPressed === 'ArrowDown' && !goingUp) {
-                dx = 0;
-                dy = 1;
-            } else {
-                 // If invalid direction change (e.g., trying to reverse), don't block next input
-                 changingDirection = false;
-            }
-        }
+        // *** changeDirection function is REMOVED ***
 
         function isGameOver() {
-            // Check for collision with self
-            for (let i = 4; i < snake.length; i++) { // Start checking from 4th segment
-                if (snake[i].x === snake[0].x && snake[i].y === snake[0].y) {
-                    return true; // Collision with self
-                }
-            }
-
-            // Check for collision with walls
-            const head = snake[0];
-            const hitLeftWall = head.x < 0;
-            const hitRightWall = head.x >= tileCount;
-            const hitTopWall = head.y < 0;
-            const hitBottomWall = head.y >= tileCount;
-
-            return hitLeftWall || hitRightWall || hitTopWall || hitBottomWall;
+             const head = snake[0];
+             // Check wall collision
+             if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) {
+                return true;
+             }
+             // Check self collision (check against the rest of the body)
+             for (let i = 1; i < snake.length; i++) {
+                 if (head.x === snake[i].x && head.y === snake[i].y) {
+                    return true;
+                 }
+             }
+             return false;
         }
 
         // --- Event Listeners ---
-        document.addEventListener('keydown', changeDirection);
+        // *** NO keydown listener needed ***
 
         // --- Initial Setup ---
-        // Draw initial state but don't start game loop until key press
-        clearCanvas();
-        drawFood(); // Draw the first food piece
-        drawSnake(); // Draw the initial snake
-        // Display initial message or simply wait for keydown
-         console.log("Press an arrow key to start the game!"); // Optional console message
-
-        // Don't call main() here initially. startGame() called by changeDirection will start it.
+        startGame(); // Start the game automatically on load
 
     </script>
 
