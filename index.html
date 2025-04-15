@@ -3,52 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto-Playing Snake Game</title>
+    <title>Smarter Auto-Snake (BFS)</title>
     <style>
-        body {
-            display: flex;
-            flex-direction: column; /* Stack elements vertically */
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
-            font-family: Arial, sans-serif;
-        }
-        h1 {
-            margin-bottom: 10px;
-            color: #333;
-        }
-        #scoreBoard {
-            margin-bottom: 20px; /* Space between score and canvas */
-            font-size: 1.5em;
-            color: #555;
-        }
-        canvas {
-            border: 5px solid #333;
-            background-color: #fff;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        #gameOverMessage {
-            position: absolute; /* Position over the canvas */
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: red;
-            font-size: 2em;
-            font-weight: bold;
-            background-color: rgba(255, 255, 255, 0.8); /* Semi-transparent white background */
-            padding: 15px;
-            border-radius: 10px;
-            display: none; /* Initially hidden */
-            text-align: center; /* Center text if it wraps */
-            z-index: 10; /* Ensure it's above the canvas */
-        }
+        /* CSS remains the same as before */
+        body { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f0f0; font-family: Arial, sans-serif; }
+        h1 { margin-bottom: 10px; color: #333; }
+        #scoreBoard { margin-bottom: 20px; font-size: 1.5em; color: #555; }
+        canvas { border: 5px solid #333; background-color: #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        #gameOverMessage { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: red; font-size: 2em; font-weight: bold; background-color: rgba(255, 255, 255, 0.8); padding: 15px; border-radius: 10px; display: none; text-align: center; z-index: 10; }
     </style>
 </head>
 <body>
 
-    <h1>Auto-Playing Snake Game</h1>
+    <h1>Smarter Auto-Snake (BFS)</h1>
     <div id="scoreBoard">Score: 0</div>
     <canvas id="gameCanvas" width="400" height="400"></canvas>
     <div id="gameOverMessage">
@@ -63,198 +30,189 @@
         const gameOverMessage = document.getElementById('gameOverMessage');
 
         // Game constants
-        const grid = 20; // Size of each square in the grid
-        const canvasSize = canvas.width; // Assuming square canvas
-        const tileCount = canvasSize / grid; // Number of tiles horizontally/vertically
+        const grid = 20;
+        const canvasSize = canvas.width;
+        const tileCount = canvasSize / grid;
 
         // Game state variables
-        let snake = []; // Initialized in startGame
-        let food = {};  // Initialized in startGame
-        let dx = 0;     // Horizontal velocity (grid units per frame)
-        let dy = 0;     // Vertical velocity (grid units per frame)
+        let snake = [];
+        let food = {};
+        let dx = 0;
+        let dy = 0;
         let score = 0;
         let gameRunning = false;
         let gameInterval;
 
-        // --- AI Helper Function: Check for Collision ---
-        function isCollision(x, y, snakeArray) {
-            // Check wall collision
-            if (x < 0 || x >= tileCount || y < 0 || y >= tileCount) {
-                return true;
-            }
-            // Check self collision
-            for (let i = 0; i < snakeArray.length; i++) {
-                if (x === snakeArray[i].x && y === snakeArray[i].y) {
-                    return true;
+        // --- Breadth-First Search (BFS) Pathfinding ---
+        function findPath(start, end, snakeArray) {
+            const queue = [];
+            const visited = new Set(); // Use a Set for efficient 'visited' checks
+
+            // Helper to create a string key for the visited set
+            const posKey = (pos) => `${pos.x},${pos.y}`;
+
+            // Mark snake body as visited (obstacles), *excluding the tail*
+            const snakeBodyWithoutTail = snakeArray.slice(0, -1);
+            snakeBodyWithoutTail.forEach(part => visited.add(posKey(part)));
+
+            // Start BFS from the 'start' position
+            queue.push({ ...start, path: [] }); // path stores sequence of {dx, dy} moves
+            visited.add(posKey(start));
+
+            while (queue.length > 0) {
+                const current = queue.shift(); // Get the next node to explore
+
+                // Found the destination?
+                if (current.x === end.x && current.y === end.y) {
+                    return current.path; // Return the sequence of moves
+                }
+
+                // Explore neighbors (Up, Down, Left, Right)
+                const neighbors = [
+                    { dx: 0, dy: -1, nx: current.x, ny: current.y - 1 }, // Up
+                    { dx: 0, dy: 1,  nx: current.x, ny: current.y + 1 }, // Down
+                    { dx: -1, dy: 0, nx: current.x - 1, ny: current.y }, // Left
+                    { dx: 1, dy: 0,  nx: current.x + 1, ny: current.y }  // Right
+                ];
+
+                for (const neighbor of neighbors) {
+                    const nextPos = { x: neighbor.nx, y: neighbor.ny };
+                    const nextKey = posKey(nextPos);
+
+                    // Check if the neighbor is valid:
+                    // 1. Within bounds
+                    // 2. Not visited yet
+                    // 3. Not hitting a wall (redundant with bounds check if grid aligned)
+                    // 4. Not hitting the snake body (already checked via visited set)
+                    if (
+                        nextPos.x >= 0 && nextPos.x < tileCount &&
+                        nextPos.y >= 0 && nextPos.y < tileCount &&
+                        !visited.has(nextKey)
+                    ) {
+                        visited.add(nextKey);
+                        const newPath = current.path.concat({ dx: neighbor.dx, dy: neighbor.dy });
+                        queue.push({ ...nextPos, path: newPath });
+                    }
                 }
             }
-            return false;
+
+            return null; // No path found
         }
 
-        // --- AI Decision Making Function ---
+
+        // --- AI Decision Making Function (Using BFS) ---
         function decideNextMove() {
             const head = snake[0];
-            const currentDx = dx; // Store current direction to avoid reversal
+            const tail = snake[snake.length - 1];
+            const currentDx = dx; // Store current direction for fallback/reversal check
             const currentDy = dy;
 
-            // 1. Calculate differences to food
-            const diffX = food.x - head.x;
-            const diffY = food.y - head.y;
+            // 1. Try to find a path to the food
+            const pathToFood = findPath(head, food, snake);
 
-            // 2. Define potential moves (preferred and alternative)
-            let preferredMoves = [];
-            let alternativeMoves = [];
-
-            // Determine preferred axis based on larger distance
-            if (Math.abs(diffX) > Math.abs(diffY)) {
-                // Prefer horizontal
-                if (diffX > 0) preferredMoves.push({ dx: 1, dy: 0 }); // Right
-                else if (diffX < 0) preferredMoves.push({ dx: -1, dy: 0 }); // Left
-
-                // Alternative is vertical
-                if (diffY > 0) alternativeMoves.push({ dx: 0, dy: 1 }); // Down
-                else if (diffY < 0) alternativeMoves.push({ dx: 0, dy: -1 }); // Up
-                else { // If dy is 0, add both vertical as alternatives
-                     alternativeMoves.push({ dx: 0, dy: -1 }); // Up
-                     alternativeMoves.push({ dx: 0, dy: 1 });  // Down
-                }
-
-            } else {
-                 // Prefer vertical
-                if (diffY > 0) preferredMoves.push({ dx: 0, dy: 1 }); // Down
-                else if (diffY < 0) preferredMoves.push({ dx: 0, dy: -1 }); // Up
-
-                // Alternative is horizontal
-                if (diffX > 0) alternativeMoves.push({ dx: 1, dy: 0 }); // Right
-                else if (diffX < 0) alternativeMoves.push({ dx: -1, dy: 0 }); // Left
-                 else { // If dx is 0, add both horizontal as alternatives
-                     alternativeMoves.push({ dx: -1, dy: 0 }); // Left
-                     alternativeMoves.push({ dx: 1, dy: 0 });  // Right
-                 }
+            if (pathToFood && pathToFood.length > 0) {
+                 // console.log("Path found to food:", pathToFood); // Debugging
+                dx = pathToFood[0].dx;
+                dy = pathToFood[0].dy;
+                return; // Move towards food
             }
-             // Handle case where head is exactly on food (should be rare, but good to handle)
-            if (diffX === 0 && diffY === 0) {
-                 // Keep current direction if possible and safe
-                 preferredMoves.push({dx: currentDx, dy: currentDy});
+             // console.log("No path to food found."); // Debugging
+
+            // 2. If no path to food, try to find a path to the tail (survival mode)
+            const pathToTail = findPath(head, tail, snake);
+
+            if (pathToTail && pathToTail.length > 0) {
+                 // console.log("Path found to tail:", pathToTail); // Debugging
+                dx = pathToTail[0].dx;
+                dy = pathToTail[0].dy;
+                return; // Move towards tail
             }
+             // console.log("No path to tail found."); // Debugging
 
 
-            // 3. Test preferred moves first
-            for (const move of preferredMoves) {
-                const nextX = head.x + move.dx;
-                const nextY = head.y + move.dy;
-                // Avoid immediate reversal if snake is longer than 1 segment
-                const isReversing = snake.length > 1 && move.dx === -currentDx && move.dy === -currentDy;
-
-                if (!isCollision(nextX, nextY, snake) && !isReversing) {
-                    dx = move.dx;
-                    dy = move.dy;
-                    return; // Found a safe preferred move
-                }
-            }
-
-             // 4. Test alternative moves if no preferred move worked
-            for (const move of alternativeMoves) {
-                const nextX = head.x + move.dx;
-                const nextY = head.y + move.dy;
-                const isReversing = snake.length > 1 && move.dx === -currentDx && move.dy === -currentDy;
-
-                if (!isCollision(nextX, nextY, snake) && !isReversing) {
-                    dx = move.dx;
-                    dy = move.dy;
-                    return; // Found a safe alternative move
-                }
-            }
-
-            // 5. Fallback: If all direct routes to food are blocked, try *any* safe move
-            // Try continuing straight first if safe (if not reversing)
-            const straightX = head.x + currentDx;
-            const straightY = head.y + currentDy;
-            if( !(currentDx === 0 && currentDy === 0) && !isCollision(straightX, straightY, snake)){
-                 dx = currentDx;
-                 dy = currentDy;
-                 // console.log("Fallback: Continuing straight"); // Debugging
-                 return;
-            }
-
-            // If straight is blocked, check all four directions
+            // 3. Fallback: If no path to food OR tail, try any *immediate* safe move
+             // console.log("Fallback: Trying immediate safe move."); // Debugging
              const possibleMoves = [
+                 // Prioritize non-reversing moves if possible
+                 { dx: currentDx, dy: currentDy }, // Straight (if not 0,0)
                  { dx: 0, dy: -1 }, // Up
                  { dx: 1, dy: 0 },  // Right
                  { dx: 0, dy: 1 },  // Down
                  { dx: -1, dy: 0 } // Left
              ];
 
+             // Create a set of snake body positions for quick lookup in fallback
+             const snakeBodySet = new Set();
+             snake.forEach(part => snakeBodySet.add(posKey(part)));
+
              for (const move of possibleMoves) {
+                  // Skip the (0,0) move if snake hasn't started
+                 if (move.dx === 0 && move.dy === 0 && snake.length > 0) continue;
+
                  const nextX = head.x + move.dx;
                  const nextY = head.y + move.dy;
+                 const nextKey = posKey({x: nextX, y: nextY});
+
                  // Prevent immediate reversal only if snake is longer than 1
                  const isReversing = snake.length > 1 && move.dx === -currentDx && move.dy === -currentDy;
 
-                 if (!isCollision(nextX, nextY, snake) && !isReversing) {
-                    // console.log("Fallback: Trying general safe move", move); // Debugging
+                 // Check bounds and collision with snake body
+                 if (
+                     nextX >= 0 && nextX < tileCount &&
+                     nextY >= 0 && nextY < tileCount &&
+                     !snakeBodySet.has(nextKey) && // Check against actual body
+                     !isReversing
+                 ) {
                      dx = move.dx;
                      dy = move.dy;
-                     return; // Found *any* safe move
+                     return; // Found an immediate safe move
                  }
              }
 
-             // If we reach here, there are NO safe moves. The game will end on the next step.
-             // We can just let the current dx/dy persist, which will cause a collision.
-             // console.log("No safe moves found!"); // Debugging
+             // 4. Absolute Last Resort: If even the fallback found nothing safe (should be rare),
+             // let the current dx/dy persist, which will likely cause game over.
+             // console.log("ULTRA FALLBACK: No immediate safe move found. Likely trapped."); // Debugging
+             // Keep current dx, dy - it will likely collide on the next moveSnake()
         }
 
 
-        // --- Game Functions ---
+        // --- Game Functions (Most remain the same) ---
 
         function main() {
-            if (!gameRunning) return; // Stop the loop if game over
+            if (!gameRunning) return;
 
-            const speed = 100 - Math.min(score * 1.5, 80); // Slightly faster auto-play speed baseline
+            const speed = 80 - Math.min(score * 1, 60); // Adjust speed as needed
             gameInterval = setTimeout(() => {
-
-                // *** AI makes decision HERE ***
-                decideNextMove();
-
+                decideNextMove(); // AI decides direction using BFS
                 clearCanvas();
-                moveSnake(); // Move based on dx/dy set by AI
+                moveSnake();
                 drawFood();
                 drawSnake();
-
                 if (isGameOver()) {
                     endGame();
                     return;
                 }
-                main(); // Call the next game loop
+                main();
             }, speed);
         }
 
         function startGame() {
-            // Reset state
-            snake = [{ x: 10, y: 10 }]; // Start in the middle
-            generateFood(); // Place initial food randomly
+            snake = [{ x: 10, y: 10 }];
+            generateFood();
             score = 0;
             scoreBoard.textContent = `Score: ${score}`;
             gameOverMessage.style.display = 'none';
             gameRunning = true;
-
-            // *** Set Initial Direction for Auto-Play ***
             dx = 1; // Start moving right
             dy = 0;
-
-            // Clear any existing interval if restarting
-            if (gameInterval) {
-                clearTimeout(gameInterval);
-            }
-
-            // *** Start the game loop immediately ***
+            if (gameInterval) clearTimeout(gameInterval);
             main();
         }
 
         function endGame() {
             gameRunning = false;
-            clearTimeout(gameInterval); // Stop the loop
-            gameOverMessage.style.display = 'block'; // Show game over message
+            clearTimeout(gameInterval);
+            gameOverMessage.style.display = 'block';
         }
 
         function clearCanvas() {
@@ -262,30 +220,29 @@
             ctx.fillRect(0, 0, canvasSize, canvasSize);
         }
 
-        function drawSnakePart(part) {
-            ctx.fillStyle = 'blue'; // Changed color for AI snake
-            ctx.strokeStyle = 'darkblue';
+        function drawSnakePart(part, index) {
+            // Optionally color head differently
+            ctx.fillStyle = index === 0 ? '#005000' : 'green'; // Darker green head
+            ctx.strokeStyle = 'darkgreen';
             ctx.lineWidth = 1;
             ctx.fillRect(part.x * grid, part.y * grid, grid, grid);
             ctx.strokeRect(part.x * grid, part.y * grid, grid, grid);
         }
+
 
         function drawSnake() {
             snake.forEach(drawSnakePart);
         }
 
         function moveSnake() {
-            // Calculate new head position based on dx, dy (set by AI)
             const head = { x: snake[0].x + dx, y: snake[0].y + dy };
-            snake.unshift(head); // Add new head
-
-            // Check if snake ate food
+            snake.unshift(head);
             if (head.x === food.x && head.y === food.y) {
                 score++;
                 scoreBoard.textContent = `Score: ${score}`;
-                generateFood(); // Generate new food
+                generateFood();
             } else {
-                snake.pop(); // Remove tail segment
+                snake.pop();
             }
         }
 
@@ -299,28 +256,27 @@
 
         function generateFood() {
             let newFoodPosition;
+            const snakeBodySet = new Set(); // Use set for efficient check
+             snake.forEach(part => snakeBodySet.add(`${part.x},${part.y}`));
+
             do {
                 newFoodPosition = {
                     x: Math.floor(Math.random() * tileCount),
                     y: Math.floor(Math.random() * tileCount)
                 };
-            } while (isFoodOnSnake(newFoodPosition));
+            } while (snakeBodySet.has(`${newFoodPosition.x},${newFoodPosition.y}`)); // Check against set
             food = newFoodPosition;
         }
 
-        function isFoodOnSnake(position) {
-            return snake.some(part => part.x === position.x && part.y === position.y);
-        }
-
-        // *** changeDirection function is REMOVED ***
+        // isFoodOnSnake removed - incorporated check into generateFood
 
         function isGameOver() {
              const head = snake[0];
-             // Check wall collision
+             // Wall collision
              if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) {
                 return true;
              }
-             // Check self collision (check against the rest of the body)
+             // Self collision (check against the rest of the body)
              for (let i = 1; i < snake.length; i++) {
                  if (head.x === snake[i].x && head.y === snake[i].y) {
                     return true;
@@ -329,13 +285,12 @@
              return false;
         }
 
-        // --- Event Listeners ---
-        // *** NO keydown listener needed ***
-
         // --- Initial Setup ---
-        startGame(); // Start the game automatically on load
+        startGame();
 
     </script>
 
+</body>
+</html>
 </body>
 </html>
